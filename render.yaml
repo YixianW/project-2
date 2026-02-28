@@ -3,12 +3,7 @@ services:
     name: project-2
     env: python
     plan: free
-    # 启动命令 - 使用gunicorn在生产环境运行
     startCommand: gunicorn --workers 1 --worker-class sync --bind 0.0.0.0:$PORT run:app
-    # 限制重启策略
-    maxShutdownDelay: 10
-    # 健康检查
-    healthCheckPath: /
     envVars:
       - key: FLASK_ENV
         value: production
