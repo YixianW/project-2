@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project 2 — Job Fit Navigator</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Job Fit Navigator</h1>
+    <p>Strict title search + resume-aware fit analysis + skill-gap insights</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Search & Analyze</h2>
+      <form id="analyze-form">
+        <div class="grid">
+          <label>Role title keyword
+            <input name="role" required placeholder="e.g., marketing manager" />
+          </label>
+          <label>Location filter
+            <input name="location" placeholder="e.g., New York" />
+          </label>
+          <label>Minimum salary
+            <input name="minSalary" type="number" min="0" step="1000" placeholder="120000" />
+          </label>
+          <label>Resume upload (PDF/DOCX)
+            <input name="resume" type="file" accept=".pdf,.docx" />
+          </label>
+        </div>
+        <button type="submit">Run Analysis</button>
+      </form>
+      <p id="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>Top Recurring Skill Gaps</h2>
+      <canvas id="gapChart" height="120"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Saved Jobs</h2>
+      <div id="saved-jobs"></div>
+    </section>
+
+    <section class="card">
+      <h2>Results</h2>
+      <div id="results"></div>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
