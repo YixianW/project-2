@@ -23,12 +23,24 @@ def extract_canonical_skills(text: str) -> dict[str, SkillEvidence]:
             matches = []
             for alias in skill["aliases"]:
                 alias_norm = normalize_text(alias)
+                
+                # Determine if this is a single-word or multi-word alias
+                # Multi-word means: contains spaces, hyphens, or slashes (after trim)
+                is_multi_word = (
+                    ' ' in alias.strip() or 
+                    '-' in alias or 
+                    '/' in alias
+                )
+                
+                # Tier 1 single-word-ok skills: match anywhere
                 if skill["tier"] == 1 and skill.get("single_word_ok", False):
                     if contains_phrase(normalized, alias_norm):
                         matches.append(alias)
-                else:
-                    if len(alias_norm.split()) > 1 and contains_phrase(normalized, alias_norm):
-                        matches.append(alias)
+                # Tier 2 or multi-word aliases: require word boundaries via contains_phrase
+                # (contains_phrase pads with spaces to prevent substring matches)
+                elif is_multi_word and contains_phrase(normalized, alias_norm):
+                    matches.append(alias)
+                    
             if matches:
                 found[skill["label"]] = SkillEvidence(skill["label"], cluster, skill["tier"], matches)
     return found
@@ -80,9 +92,12 @@ def score_fit(resume_skills: dict[str, SkillEvidence], jd_skills: dict[str, Skil
     
     raw_score = tier2_score * 0.6 + tier1_score * 0.4
     
-    # 温和的缺失惩罚：缺失所有技能才会降低，单个缺失影响较小
+    # 改进的缺失惩罚：使用对数函数而不是线性，避免完全塌陷到0
+    # 1-2 缺失：~0-2 分  | 3-5 缺失：~3-8 分  | 6+ 缺失：~9-15 分
     if missing:
-        missing_penalty = min(len(missing) * 1.5, 15)
+        import math
+        missing_count = len(missing)
+        missing_penalty = min(math.log(missing_count + 1) * 3.5, 15)
         score = max(0, round(raw_score - missing_penalty))
     else:
         score = round(raw_score)

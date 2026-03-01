@@ -14,6 +14,14 @@ def normalize_text(text: str) -> str:
 
 
 def contains_phrase(text: str, phrase: str) -> bool:
-    padded = f" {text} "
-    candidate = f" {normalize_text(phrase)} "
+    """Check if phrase appears as a word boundary-respecting substring in text.
+    
+    Both text and phrase are normalized using the same rules to ensure
+    consistent matching even if input text is already normalized.
+    """
+    text_norm = normalize_text(text)
+    phrase_norm = normalize_text(phrase)
+    # Pad with spaces to ensure word boundary matching
+    padded = f" {text_norm} "
+    candidate = f" {phrase_norm} "
     return candidate in padded
