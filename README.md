@@ -103,6 +103,16 @@ If not set, app uses a built-in mock dataset for demo/development.
 - Set Adzuna secrets in deployment environment.
 - Verify frontend serves from Flask and `/api/analyze` is reachable.
 
+## Static frontend for GitHub Pages
+The job matcher UI can be hosted as a **static site** on GitHub Pages. To set this up:
+
+1. Open `static/js/config.js` and uncomment/set `API_BASE_URL` to your backend URL (e.g. `https://your-app.onrender.com`).
+2. Run `python build_frontend.py` to generate the `docs/` folder containing a self-contained build of the frontend.
+3. Commit and push the `docs/` directory (already included in this repo).
+4. In your repository settings under *Pages*, choose **main branch /docs folder** as the source.
+   The published site (`https://<username>.github.io/project-2`) will now display the job matcher
+   interface instead of the repository description.
+
 ## Tradeoffs vs naive keyword extraction
 - More conservative and explainable.
 - Fewer false-positive matches from broad words like "strategy" or "marketing".
