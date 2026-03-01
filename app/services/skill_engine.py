@@ -119,3 +119,81 @@ def aggregate_skill_gaps(job_analyses: list[dict]) -> list[dict]:
     for analysis in job_analyses:
         counter.update(analysis.get("missing_skills", []))
     return [{"skill": skill, "count": count} for skill, count in counter.most_common(8)]
+
+
+def score_fit_with_ai(resume_text: str, job_description: str, use_ai: bool = True) -> dict:
+    """
+    Score job fit using hybrid approach: keyword matching + optional AI matching.
+    
+    Args:
+        resume_text: Extracted resume text
+        job_description: Job description text
+        use_ai: Whether to use AI matching (requires GEMINI_API_KEY)
+    
+    Returns:
+        Dictionary with score, matched skills, missing skills, and explanation
+    """
+    if use_ai:
+        try:
+            from app.services.ai_matcher import get_ai_matcher
+            
+            matcher = get_ai_matcher()
+            ai_result = matcher.match_skills(resume_text, job_description)
+            
+            return {
+                "score": ai_result.confidence_score,
+                "matched_strengths": ai_result.matched_skills[:8],
+                "missing_skills": ai_result.missing_skills[:10],
+                "explanation": ai_result.explanation,
+                "ai_powered": True,
+            }
+        except Exception as e:
+            # Fallback to keyword matching if AI fails
+            print(f"AI matching failed, falling back to keyword matching: {e}")
+            return score_fit_hybrid(resume_text, job_description, use_ai=False)
+    
+    return score_fit_hybrid(resume_text, job_description, use_ai=False)
+
+
+def score_fit_hybrid(resume_text: str, job_description: str, use_ai: bool = False) -> dict:
+    """
+    Hybrid skill matching: combines keyword matching with optional AI enhancement.
+    
+    Args:
+        resume_text: Extracted resume text
+        job_description: Job description text
+        use_ai: Whether to use AI matching
+    
+    Returns:
+        Dictionary with score and skill analysis
+    """
+    resume_skills = extract_canonical_skills(resume_text)
+    jd_skills = extract_canonical_skills(job_description)
+    
+    # Get keyword-based results
+    fit_result = score_fit(resume_skills, jd_skills)
+    
+    # Optionally enhance with AI
+    if use_ai:
+        try:
+            from app.services.ai_matcher import get_ai_matcher
+            
+            matcher = get_ai_matcher()
+            ai_result = matcher.match_skills(resume_text, job_description)
+            
+            # Merge AI findings with keyword results
+            enhanced_matched = list(set(fit_result["matched_strengths"] + ai_result.matched_skills))
+            enhanced_missing = list(set(fit_result["missing_skills"] + ai_result.missing_skills))
+            
+            return {
+                "score": (fit_result["score"] + ai_result.confidence_score) // 2,
+                "matched_strengths": enhanced_matched[:8],
+                "missing_skills": enhanced_missing[:10],
+                "explanation": f"Hybrid (Keyword + AI): {fit_result['explanation']} | AI: {ai_result.explanation}",
+                "ai_powered": True,
+            }
+        except Exception as e:
+            print(f"AI enhancement failed, using keyword results only: {e}")
+            return fit_result
+    
+    return fit_result
