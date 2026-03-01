@@ -1,9 +1,11 @@
 from flask import Blueprint, jsonify, render_template, request
+import logging
 
 from app.services.ai_matcher import get_ai_matcher
 from app.services.job_service import search_jobs_strict_title
 from app.services.skill_engine import aggregate_skill_gaps
 
+logger = logging.getLogger(__name__)
 api = Blueprint("api", __name__)
 
 
@@ -58,11 +60,25 @@ def analyze_jobs():
         )
 
     # Step 2: AI-powered skill matching using direct file analysis
-    matcher = get_ai_matcher()
+    try:
+        matcher = get_ai_matcher()
+    except ValueError as e:
+        logger.error(f"API Configuration Error: {e}")
+        return jsonify({
+            "error": str(e),
+            "hint": "Make sure GEMINI_API_KEY is set in your environment"
+        }), 500
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini: {e}", exc_info=True)
+        return jsonify({
+            "error": f"Gemini initialization failed: {str(e)}"
+        }), 500
+    
     analyses = []
     
     for job in jobs:
         try:
+            logger.info(f"Analyzing job: {job.get('title')}")
             # Gemini AI reads the actual resume file and matches against JD
             fit = matcher.match_skills_with_file(
                 resume_filename=resume_filename,
@@ -82,7 +98,7 @@ def analyze_jobs():
             )
         except Exception as e:
             # Log error but continue with other jobs
-            print(f"Error analyzing job {job.get('id')}: {e}")
+            logger.error(f"Error analyzing job {job.get('id')}: {e}", exc_info=True)
             analyses.append(
                 {
                     "job": job,

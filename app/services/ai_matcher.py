@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass
@@ -7,6 +8,8 @@ from pathlib import Path
 import google.generativeai as genai
 
 from app.data.skill_taxonomy import SKILL_TAXONOMY
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,10 +28,16 @@ class GeminiMatcher:
         """Initialize Gemini matcher with API key from env or parameter."""
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
+            raise ValueError(
+                "GEMINI_API_KEY environment variable not set. "
+                "Please set it in .env (local) or in Render environment variables (production). "
+                "Get a free key from https://ai.google.dev/"
+            )
+        logger.info("✓ GEMINI_API_KEY found, initializing Gemini API")
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel("gemini-pro")
         self.vision_model = genai.GenerativeModel("gemini-1.5-pro")  # For file analysis
+        logger.info("✓ Gemini models initialized successfully")
 
     def _save_temp_file(self, filename: str, file_bytes: bytes) -> str:
         """Save uploaded file to temp location for Gemini to read."""
@@ -54,7 +63,10 @@ class GeminiMatcher:
         Returns:
             AIMatchResult with matched skills, missing skills, and confidence score
         """
+        logger.info(f"Starting AI matching for {resume_filename}")
+        
         if not resume_bytes or not job_description:
+            logger.warning("Empty resume or job description provided")
             return AIMatchResult(
                 matched_skills=[],
                 missing_skills=[],
@@ -65,10 +77,12 @@ class GeminiMatcher:
         try:
             # Save temp file for Gemini to process
             temp_path = self._save_temp_file(resume_filename, resume_bytes)
+            logger.info(f"Saved temp resume file to: {temp_path}")
 
             # Upload file to Gemini
-            print(f"Uploading resume file: {resume_filename}")
+            logger.info(f"Uploading resume file to Gemini: {resume_filename}")
             uploaded_file = genai.upload_file(temp_path)
+            logger.info(f"✓ File uploaded successfully. File ID: {uploaded_file.name}")
 
             # Create prompt with file reference
             prompt = f"""You are an expert recruiter and skill matcher. Your job is to evaluate how well a candidate's resume matches a job description.
@@ -115,13 +129,18 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
 }}"""
 
             # Call Gemini with file reference
+            logger.info("Calling Gemini API for skill matching...")
             response = self.vision_model.generate_content(
                 [prompt, uploaded_file]
             )
+            logger.info("✓ Gemini API response received")
+            
             response_text = response.text.strip()
+            logger.debug(f"Raw response: {response_text[:200]}...")
 
             # Clean up: delete uploaded file
             genai.delete_file(uploaded_file.name)
+            logger.info("✓ File deleted from Gemini")
 
             # Remove markdown code blocks if present
             if response_text.startswith("```"):
@@ -131,6 +150,7 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
             response_text = response_text.strip()
 
             result_dict = json.loads(response_text)
+            logger.info(f"✓ Skill matching completed. Score: {result_dict.get('confidence_score', 0)}")
 
             return AIMatchResult(
                 matched_skills=result_dict.get("matched_skills", []),
@@ -141,6 +161,7 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
             )
 
         except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
             return AIMatchResult(
                 matched_skills=[],
                 missing_skills=[],
@@ -149,6 +170,7 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
                 raw_response=response_text if 'response_text' in locals() else "",
             )
         except Exception as e:
+            logger.error(f"AI matching error: {e}", exc_info=True)
             return AIMatchResult(
                 matched_skills=[],
                 missing_skills=[],
@@ -160,6 +182,7 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
             try:
                 if 'temp_path' in locals():
                     Path(temp_path).unlink(missing_ok=True)
+                    logger.info("Temp file cleaned up")
             except Exception:
                 pass
 
@@ -271,5 +294,20 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
 
 
 def get_ai_matcher() -> GeminiMatcher:
-    """Factory function to get Gemini matcher instance."""
-    return GeminiMatcher()
+    """
+    Factory function to get Gemini matcher instance.
+    
+    Raises:
+        ValueError: If GEMINI_API_KEY is not configured
+    """
+    logger.info("Initializing Gemini matcher...")
+    try:
+        matcher = GeminiMatcher()
+        logger.info("✓ Gemini matcher initialized")
+        return matcher
+    except ValueError as e:
+        logger.error(f"❌ Gemini initialization failed: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error initializing Gemini: {e}", exc_info=True)
+        raise

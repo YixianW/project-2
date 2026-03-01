@@ -1,3 +1,4 @@
+import logging
 import os
 from flask import Flask
 from flask_cors import CORS
@@ -6,6 +7,14 @@ from .routes import api
 
 
 def create_app() -> Flask:
+    # 配置日志
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    logger.info("Initializing Flask application...")
+    
     # 计算项目根目录，确保无论从哪里运行都能找到static和templates文件夹
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     app = Flask(__name__, 
@@ -16,7 +25,14 @@ def create_app() -> Flask:
     # 启用 CORS，支持前后端分离部署
     CORS(app, resources={r"/api/*": {"origins": "*"}})
     
+    # 检查 GEMINI_API_KEY
+    if os.getenv("GEMINI_API_KEY"):
+        logger.info("✓ GEMINI_API_KEY is configured")
+    else:
+        logger.warning("⚠ GEMINI_API_KEY is NOT configured - AI matching will fail")
+    
     app.register_blueprint(api)
+    logger.info("✓ Flask application initialized successfully")
     return app
 
 
