@@ -9,8 +9,6 @@ let gapChart;
 // 否则使用相对路径（适合同源部署）
 const API_BASE_URL = window.API_BASE_URL || '';
 const ANALYZE_ENDPOINT = `${API_BASE_URL}/api/analyze`;
-// 在页面状态区显示正在使用的 API 端点，便于调试（是否为 Render URL）
-if (statusEl) statusEl.textContent = `Using API endpoint: ${ANALYZE_ENDPOINT}`;
 
 function getSavedJobs() {
   return JSON.parse(localStorage.getItem('savedJobs') || '[]');
