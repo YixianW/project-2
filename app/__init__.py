@@ -1,5 +1,6 @@
 import os
 from flask import Flask
+from flask_cors import CORS
 
 from .routes import api
 
@@ -11,6 +12,10 @@ def create_app() -> Flask:
                 static_folder=os.path.join(base_dir, "static"), 
                 template_folder=os.path.join(base_dir, "templates"))
     app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+    
+    # 启用 CORS，支持前后端分离部署
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    
     app.register_blueprint(api)
     return app
 

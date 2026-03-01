@@ -4,6 +4,12 @@ const statusEl = document.getElementById('status');
 const savedJobsEl = document.getElementById('saved-jobs');
 let gapChart;
 
+// 构建 API 基础 URL
+// 如果定义了 window.API_BASE_URL（来自 config.js），使用该地址
+// 否则使用相对路径（适合同源部署）
+const API_BASE_URL = window.API_BASE_URL || '';
+const ANALYZE_ENDPOINT = `${API_BASE_URL}/api/analyze`;
+
 function getSavedJobs() {
   return JSON.parse(localStorage.getItem('savedJobs') || '[]');
 }
@@ -70,7 +76,7 @@ form.addEventListener('submit', async (e) => {
   resultsEl.innerHTML = '';
   const formData = new FormData(form);
   try {
-    const resp = await fetch('/api/analyze', { method: 'POST', body: formData });
+    const resp = await fetch(ANALYZE_ENDPOINT, { method: 'POST', body: formData });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Unknown backend error');
     if (data.message) statusEl.textContent = data.message;

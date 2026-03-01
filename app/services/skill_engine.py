@@ -58,21 +58,38 @@ def score_fit(resume_skills: dict[str, SkillEvidence], jd_skills: dict[str, Skil
             "explanation": "No canonical job-description skills were recognized, so fit score stays conservative.",
         }
 
-    weighted_total = 0
-    weighted_hit = 0
+    # 改善评分算法：计算加权匹配率
+    tier2_total = 0
+    tier2_hit = 0
+    tier1_total = 0
+    tier1_hit = 0
+    
     for label, evidence in jd_skills.items():
-        weight = 2 if evidence.tier == 2 else 1.5
-        weighted_total += weight
-        if label in resume_labels:
-            weighted_hit += weight
-
-    raw = (weighted_hit / weighted_total) * 100
-    penalty = min(len(missing) * 3, 20)
-    score = max(0, round(raw - penalty))
+        if evidence.tier == 2:
+            tier2_total += 1
+            if label in resume_labels:
+                tier2_hit += 1
+        else:
+            tier1_total += 1
+            if label in resume_labels:
+                tier1_hit += 1
+    
+    # 权重：Tier 2 技能占 60%，Tier 1 技能占 40%
+    tier2_score = (tier2_hit / tier2_total * 100) if tier2_total > 0 else 0
+    tier1_score = (tier1_hit / tier1_total * 100) if tier1_total > 0 else 0
+    
+    raw_score = tier2_score * 0.6 + tier1_score * 0.4
+    
+    # 温和的缺失惩罚：缺失所有技能才会降低，单个缺失影响较小
+    if missing:
+        missing_penalty = min(len(missing) * 1.5, 15)
+        score = max(0, round(raw_score - missing_penalty))
+    else:
+        score = round(raw_score)
 
     explanation = (
-        f"Matched {len(overlap)} of {len(jd_labels)} canonical JD skills. "
-        f"Applied missing-skill penalty for {len(missing)} uncovered requirements."
+        f"Matched {len(overlap)} of {len(jd_labels)} canonical JD skills ({len(overlap)}/{len(jd_labels)}). "
+        f"Tier 2: {tier2_hit}/{tier2_total}, Tier 1: {tier1_hit}/{tier1_total}."
     )
     return {
         "score": score,
