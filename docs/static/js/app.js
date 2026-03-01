@@ -25,7 +25,7 @@ function saveJob(job) {
 
 function removeJob(jobId) {
   const saved = getSavedJobs();
-  const filtered = saved.filter((j) => j.id !== jobId);
+  const filtered = saved.filter((j) => String(j.id) !== String(jobId));
   localStorage.setItem('savedJobs', JSON.stringify(filtered));
   renderSavedJobs();
 }
