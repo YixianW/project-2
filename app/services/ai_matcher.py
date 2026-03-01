@@ -43,14 +43,18 @@ class GeminiMatcher:
             available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
             logger.info(f"Available models: {available_models}")
             
-            # Prefer gemini-2.0-flash, fall back to gemini-1.5-flash
-            self.vision_model_name = "gemini-2.0-flash"
-            if not any("gemini-2.0-flash" in m for m in available_models):
-                self.vision_model_name = "gemini-1.5-flash"
-                logger.warning("gemini-2.0-flash not available, using gemini-1.5-flash")
+            # Prefer latest flash models in order: 2.5 > 2.0 > 1.5
+            self.vision_model_name = "gemini-2.5-flash"
+            if not any("gemini-2.5-flash" in m for m in available_models):
+                self.vision_model_name = "gemini-2.0-flash"
+                if not any("gemini-2.0-flash" in m for m in available_models):
+                    self.vision_model_name = "gemini-1.5-flash"
+                    logger.warning("gemini-2.5-flash and gemini-2.0-flash not available, using gemini-1.5-flash")
+                else:
+                    logger.info("Using gemini-2.0-flash (gemini-2.5-flash not available)")
         except Exception as e:
-            logger.warning(f"Could not list models: {e}, using default gemini-2.0-flash")
-            self.vision_model_name = "gemini-2.0-flash"
+            logger.warning(f"Could not list models: {e}, using default gemini-2.5-flash")
+            self.vision_model_name = "gemini-2.5-flash"
         
         self.vision_model = genai.GenerativeModel(self.vision_model_name)
         logger.info(f"✓ Gemini model initialized: {self.vision_model_name}")
