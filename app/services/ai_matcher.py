@@ -118,58 +118,37 @@ class GeminiMatcher:
             except Exception as e:
                 logger.warning(f"Failed to delete temp file: {e}")
 
-            # Create prompt with file reference
-            prompt = f"""You are an expert recruiter and skill matcher. Your job is to evaluate how well a candidate's resume matches a job description.
-
-I'm uploading the candidate's resume file directly. Please read and understand the entire resume carefully, including all:
-- Work experience and achievements
-- Skills and technical abilities  
-- Education and certifications
-- Projects or volunteer work
-- Soft skills and competencies
-
-Then match it against the job requirements below.
-
-IMPORTANT: Focus on SEMANTIC matching, not just exact keyword matches.
-- Understand that different terms mean the same thing (e.g., "go-to-market strategy" = "product launch" = "market entry")
-- Recognize related skills even if worded differently
-- Consider context and implied skills from job titles and descriptions
-- Be generous with matching - if experience is relevant, count it
-- Look at the spirit of what the candidate can do, not just literal word matches
+            # Create a more concise prompt to speed up response
+            prompt = f"""Analyze this resume against the job description. Return ONLY a JSON object with no other text.
 
 JOB DESCRIPTION:
-{job_description[:3000]}
+{job_description[:2000]}
 
-RESPOND WITH ONLY VALID JSON (no extra text, no markdown, no code blocks):
+RESPOND ONLY WITH THIS JSON FORMAT (no markdown, no explanation, no extra text):
+{{"matched_skills": ["skill1", "skill2"], "missing_skills": ["skill3"], "confidence_score": 75, "explanation": "brief"}}
 
-{{
-    "matched_skills": ["skill1", "skill2", ...],
-    "missing_skills": ["skill3", "skill4", ...],
-    "confidence_score": 75,
-    "explanation": "Brief explanation of the match"
-}}
-
-CRITICAL RULES:
-1. Your response MUST start with {{ and end with }}
-2. Do NOT include any text before or after the JSON
-3. Do NOT use markdown code blocks (```)
-4. Return ONLY the JSON object
-5. Provide confidence score (0-100):
-   - 80-100: Strong match, well-prepared candidate
-   - 60-79: Good match, can learn on job
-   - 40-59: Partial match, needs growth
-   - 0-39: Weak match, significant gaps"""
+Rules:
+- matched_skills: Skills from resume that match job requirements
+- missing_skills: Job skills not in resume
+- confidence_score: 0-100 (80+ strong match, 60-79 good, 40-59 partial, 0-39 weak)
+- explanation: 1-2 sentences max
+- MUST START WITH {{ AND END WITH }}
+- NO TEXT BEFORE OR AFTER JSON
+- NO MARKDOWN OR BACKTICKS"""
 
             # Call Gemini with file reference
-            logger.info("Calling Gemini API for skill matching (this may take 30-60 seconds for large files)...")
+            logger.info("Calling Gemini API for skill matching...")
             response = self.vision_model.generate_content(
                 [prompt, uploaded_file],
-                request_options={"timeout": 300}  # 5 minute timeout for Gemini
+                request_options={"timeout": 600}  # 10 minute timeout for Gemini
             )
             logger.info("✓ Gemini API response received")
             
-            response_text = response.text.strip()
-            logger.info(f"Raw response (first 300 chars): {response_text[:300]}")
+            response_text = response.text if hasattr(response, 'text') else str(response)
+            if response_text is None:
+                response_text = ""
+            response_text = response_text.strip()
+            logger.info(f"Raw response length: {len(response_text)} chars, first 200: {response_text[:200]}")
 
             # Clean up: delete uploaded file
             if uploaded_file:
@@ -177,55 +156,75 @@ CRITICAL RULES:
                 uploaded_file = None
                 logger.info("✓ File deleted from Gemini")
 
-            # Extract JSON from response - handle markdown code blocks and other wrappers
+            # Extract JSON from response - more robust parsing
             cleaned_text = response_text
             
             # Remove markdown code block wrappers (```json ... ``` or ``` ... ```)
             if "```" in cleaned_text:
                 # Find content between triple backticks
                 parts = cleaned_text.split("```")
-                if len(parts) >= 2:
-                    # Usually it's: ["before", "json\n{...}\n", "after"]
-                    for part in parts:
-                        part_stripped = part.strip()
-                        if part_stripped.startswith("json"):
-                            # Remove "json" prefix if present
-                            cleaned_text = part_stripped[4:].strip()
-                            break
-                        elif "{" in part_stripped and "}" in part_stripped:
-                            # Found JSON-like content
-                            cleaned_text = part_stripped
-                            break
+                for part in parts:
+                    part_stripped = part.strip()
+                    if part_stripped.startswith("{"):
+                        cleaned_text = part_stripped
+                        break
             
-            # Find and extract JSON object if wrapped in other text
+            # Find and extract JSON object with bracket matching
             if not cleaned_text.strip().startswith("{"):
-                # Try to find JSON object in the middle of text
                 json_start = cleaned_text.find("{")
-                json_end = cleaned_text.rfind("}")
-                if json_start != -1 and json_end != -1 and json_end > json_start:
-                    cleaned_text = cleaned_text[json_start:json_end+1]
-                    logger.info(f"Extracted JSON from text: {cleaned_text[:100]}...")
+                if json_start != -1:
+                    # Find matching closing bracket
+                    bracket_count = 0
+                    json_end = -1
+                    for i in range(json_start, len(cleaned_text)):
+                        if cleaned_text[i] == "{":
+                            bracket_count += 1
+                        elif cleaned_text[i] == "}":
+                            bracket_count -= 1
+                            if bracket_count == 0:
+                                json_end = i + 1
+                                break
+                    
+                    if json_end > json_start:
+                        cleaned_text = cleaned_text[json_start:json_end]
+                        logger.info(f"Extracted JSON ({json_end-json_start} chars)")
             
             cleaned_text = cleaned_text.strip()
             logger.debug(f"Cleaned response: {cleaned_text[:200]}")
 
-            if not cleaned_text:
-                logger.error("Response is empty after cleaning")
+            if not cleaned_text or not cleaned_text.startswith("{"):
+                logger.error(f"Invalid response format: {response_text[:300]}")
                 return AIMatchResult(
                     matched_skills=[],
                     missing_skills=[],
                     confidence_score=0,
-                    explanation="Gemini returned empty response",
+                    explanation="Invalid response from Gemini",
                 )
 
-            result_dict = json.loads(cleaned_text)
+            # Try JSON parsing with repair
+            try:
+                result_dict = json.loads(cleaned_text)
+            except json.JSONDecodeError as parse_err:
+                logger.warning(f"JSON parse error, attempting repair: {parse_err}")
+                # Repair incomplete JSON
+                if cleaned_text.count("{") > cleaned_text.count("}"):
+                    cleaned_text = cleaned_text + "}" * (cleaned_text.count("{") - cleaned_text.count("}"))
+                    try:
+                        result_dict = json.loads(cleaned_text)
+                        logger.info("✓ Repaired incomplete JSON")
+                    except:
+                        logger.error(f"Repair failed. Text: {cleaned_text[:300]}")
+                        raise
+                else:
+                    raise
+            
             logger.info(f"✓ Skill matching completed. Score: {result_dict.get('confidence_score', 0)}")
 
             return AIMatchResult(
-                matched_skills=result_dict.get("matched_skills", []),
-                missing_skills=result_dict.get("missing_skills", []),
-                confidence_score=int(result_dict.get("confidence_score", 0)),
-                explanation=result_dict.get("explanation", ""),
+                matched_skills=result_dict.get("matched_skills", []) or [],
+                missing_skills=result_dict.get("missing_skills", []) or [],
+                confidence_score=int(result_dict.get("confidence_score", 0) or 0),
+                explanation=result_dict.get("explanation", "") or "",
                 raw_response=cleaned_text,
             )
 

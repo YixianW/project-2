@@ -3,7 +3,7 @@ services:
     name: project-2
     env: python
     plan: free
-    startCommand: gunicorn --workers 1 --worker-class sync --bind 0.0.0.0:$PORT --timeout 300 --max-requests 100 --max-requests-jitter 10 run:app
+    startCommand: gunicorn --workers 1 --worker-class sync --bind 0.0.0.0:$PORT --timeout 600 --keep-alive 10 --max-requests 50 --max-requests-jitter 5 run:app
     envVars:
       - key: FLASK_ENV
         value: production
