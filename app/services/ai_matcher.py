@@ -35,9 +35,25 @@ class GeminiMatcher:
             )
         logger.info("✓ GEMINI_API_KEY found, initializing Gemini API")
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel("gemini-pro")
-        self.vision_model = genai.GenerativeModel("gemini-1.5-pro")  # For file analysis
-        logger.info("✓ Gemini models initialized successfully")
+        
+        # Try to detect available models
+        logger.info("Detecting available Gemini models...")
+        try:
+            models = genai.list_models()
+            available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+            logger.info(f"Available models: {available_models}")
+            
+            # Prefer gemini-2.0-flash, fall back to gemini-1.5-flash
+            self.vision_model_name = "gemini-2.0-flash"
+            if not any("gemini-2.0-flash" in m for m in available_models):
+                self.vision_model_name = "gemini-1.5-flash"
+                logger.warning("gemini-2.0-flash not available, using gemini-1.5-flash")
+        except Exception as e:
+            logger.warning(f"Could not list models: {e}, using default gemini-2.0-flash")
+            self.vision_model_name = "gemini-2.0-flash"
+        
+        self.vision_model = genai.GenerativeModel(self.vision_model_name)
+        logger.info(f"✓ Gemini model initialized: {self.vision_model_name}")
 
     def _save_temp_file(self, filename: str, file_bytes: bytes) -> str:
         """Save uploaded file to temp location for Gemini to read."""
