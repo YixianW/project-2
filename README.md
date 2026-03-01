@@ -106,8 +106,14 @@ If not set, app uses a built-in mock dataset for demo/development.
 ## Static frontend for GitHub Pages
 The job matcher UI can be hosted as a **static site** on GitHub Pages. To set this up:
 
-1. Open `static/js/config.js` and uncomment/set `API_BASE_URL` to your backend URL (e.g. `https://your-app.onrender.com`).
-2. Run `python build_frontend.py` to generate the `docs/` folder containing a self-contained build of the frontend.
+1. Either edit `static/js/config.js` or simply pass the API URL when building.
+   - **Manual:** open `static/js/config.js` and uncomment/set `API_BASE_URL` to your backend URL (e.g. `https://your-app.onrender.com`).
+   - **Auto:** run the build script with `API_BASE_URL` env var set, e.g.
+     ```bash
+     API_BASE_URL=https://your-app.onrender.com python build_frontend.py
+     ```
+     The script will inject the value into `docs/static/js/config.js` automatically.
+2. Run `python build_frontend.py` (or with env var) to generate the `docs/` folder containing a self-contained build of the frontend.
 3. Commit and push the `docs/` directory (already included in this repo).
 4. In your repository settings under *Pages*, choose **main branch /docs folder** as the source.
    The published site (`https://<username>.github.io/project-2`) will now display the job matcher
