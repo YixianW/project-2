@@ -1,20 +1,22 @@
 # Gemini API AI-Powered Skill Matching Setup
 
-This guide explains how to set up and use the Gemini AI skill matching feature.
-
 ## Overview
 
-The system now supports two skill matching approaches:
+The system now uses **AI-powered skill matching by default** powered by Google Gemini API.
 
-1. **Keyword Matching** (Default): Uses predefined skill taxonomy and keyword matching - fast and free
-2. **AI Matching** (Optional): Uses Google Gemini API for intelligent semantic matching - more accurate
+### How It Works
+
+1. **Job Title Matching** (Strict requirement): Users search by job title and location - only exact title matches are returned
+2. **Skill Matching** (AI-powered): Gemini API intelligently analyzes resume vs job description to match skills semantically
+
+This hybrid approach maintains strict job title filtering while enabling intelligent skill understanding.
 
 ## Setup Instructions
 
 ### 1. Get Gemini API Key
 
 1. Visit https://ai.google.dev/
-2. Click "Get API key" (free tier available)
+2. Click "Get API key" (free tier available - 60 req/min, 1500 req/day)
 3. Copy your API key
 
 ### 2. Local Development Setup
@@ -37,71 +39,67 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-### 3. Production Setup (Render)
+Run the app:
 
-Add the environment variable in Render Dashboard:
+```bash
+python run.py
+```
+
+### 3. Production Setup (Render)
 
 1. Go to your Render service settings
 2. Click "Environment" or "Env vars"
 3. Add new variable:
    - **Key**: `GEMINI_API_KEY`
-   - **Value**: Your Gemini API key (paste your secret key)
+   - **Value**: Your Gemini API key
 4. Save and redeploy
 
-## Usage
+Your updates will be deployed automatically.
 
-### Frontend Integration
+## How the AI Matcher Works
 
-Add a checkbox or toggle button in your UI to enable AI matching:
+The AI matcher uses semantic understanding to:
 
-```html
-<input type="checkbox" id="useAI" name="useAI"> Use AI for better matching
-```
+- ✅ Match related but differently-worded skills (e.g., "go-to-market" matches "product launch")
+- ✅ Understand context (e.g., "Product Manager" experience includes product marketing skills)
+- ✅ Handle role-specific terminology (useful for Product Marketing, GTM, etc.)
+- ✅ Provide confidence scores based on match quality
 
-### API Request
+### Example
 
-Send `useAI=true` parameter in the form data:
+**Resume says:** "Managed product launch campaigns and GTM strategy"  
+**Job requires:** "Product marketing and go-to-market strategy"  
+**Result:** ✅ Matched (semantic understanding)
+
+**Legacy keyword matching would:** ❌ Miss this match because exact phrases don't align
+
+## API Usage
+
+The API now automatically uses AI matching:
 
 ```javascript
-const formData = new FormData();
-formData.append('role', 'Software Engineer');
-formData.append('location', 'San Francisco');
-formData.append('resume', resumeFile);
-formData.append('useAI', 'true');  // Enable AI matching
-
 fetch('/api/analyze', {
     method: 'POST',
-    body: formData
+    body: formData  // No need to specify useAI anymore
 });
 ```
 
-### Backend Function
+### Response Format
 
-Use `score_fit_with_ai()` function:
-
-```python
-from app.services.skill_engine import score_fit_with_ai
-
-# AI-powered matching
-result = score_fit_with_ai(
-    resume_text="Your resume text...",
-    job_description="Job description text...",
-    use_ai=True
-)
-
-# Falls back to keyword matching if AI fails
-```
-
-Or use hybrid matching:
-
-```python
-from app.services.skill_engine import score_fit_hybrid
-
-result = score_fit_hybrid(
-    resume_text="...",
-    job_description="...",
-    use_ai=True  # Combines keyword + AI
-)
+```json
+{
+    "jobs": [
+        {
+            "job": { "title": "...", "description": "..." },
+            "fit_score": 75,
+            "matched_strengths": ["skill1", "skill2"],
+            "missing_skills": ["skill3"],
+            "explanation": "Good match for product marketing background",
+            "ai_powered": true
+        }
+    ],
+    "skill_gap_summary": [...]
+}
 ```
 
 ## API Pricing
@@ -109,36 +107,46 @@ result = score_fit_hybrid(
 **Google Gemini API (Free Tier)**:
 - 60 requests per minute
 - 1500 requests per day
-- Completely free
+- **Completely free**
 
-This is more than enough for development and testing.
+Even if you exceed the free tier:
+- Ultra-cheap: $0.075 per 1M tokens
+- For comparison: GPT-4 is 15x more expensive
 
 ## Troubleshooting
 
-### Missing API Key
+### No GEMINI_API_KEY set
 
-If `GEMINI_API_KEY` is not set, the system will automatically fall back to keyword matching without errors.
+If the environment variable is missing, the system will throw an error. Make sure to:
+1. Set it in `.env` (local) or Render (production)
+2. Restart the app after adding the key
 
-### AI Request Failed
+### Incorrect scores
 
-The system has built-in fallback:
-- If Gemini API fails → Uses keyword matching
-- Console will show error message for debugging
+AI matching should be much more generous than keyword matching. If you're still getting 0 scores:
+1. Check that resume and job description are being parsed correctly
+2. Verify GEMINI_API_KEY is correctly set
+3. Check console logs for specific errors
 
-### Response Parsing Error
+## Migration from Keyword Matching
 
-The AI matcher validates JSON responses and handles malformed responses gracefully.
+The system previously used strict keyword matching, which had limitations:
+- Tier 1/2 classification was rigid
+- Exact phrase matching missed related concepts
+- Product Marketing roles had especially low match rates
 
-## Cost Estimation
-
-- **Free tier**: Sufficient for up to 1500 analysis requests per day
-- **If exceeding limits**: $0.075 per 1M tokens (very cheap compared to GPT-4)
+**The new AI-powered approach is more accurate for:**
+- Marketing and product roles
+- GTM and launch strategies
+- Roles with varied terminology
+- Skills with multiple names
 
 ## Files Modified
 
-- `requirements.txt` - Added google-generativeai, python-dotenv
-- `app/services/ai_matcher.py` - New AI matching service
-- `app/services/skill_engine.py` - Added AI functions
-- `app/routes.py` - Updated API to support AI matching
-- `.env.example` - Added GEMINI_API_KEY
-- `render.yaml` - Added GEMINI_API_KEY environment variable
+- `app/services/ai_matcher.py` - Improved AI prompt for semantic matching
+- `app/services/skill_engine.py` - Kept for backward compatibility
+- `app/routes.py` - Now defaults to AI matching
+- `requirements.txt` - google-generativeai, python-dotenv
+- `.env.example` - GEMINI_API_KEY config
+- `render.yaml` - Environment variable declaration
+

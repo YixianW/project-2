@@ -4,10 +4,6 @@ from app.services.job_service import search_jobs_strict_title
 from app.services.resume_parser import extract_resume_text
 from app.services.skill_engine import (
     aggregate_skill_gaps,
-    detect_weak_signals,
-    extract_canonical_skills,
-    ignored_term_hits,
-    score_fit,
     score_fit_with_ai,
 )
 from app.services.sponsorship import classify_sponsorship
@@ -22,10 +18,15 @@ def index():
 
 @api.post("/api/analyze")
 def analyze_jobs():
+    """
+    Analyze job fit using AI-powered matching.
+    
+    Skill matching is now powered by Gemini AI for semantic understanding.
+    Job title search remains strict (hardline requirement).
+    """
     role_query = request.form.get("role", "").strip()
     location = request.form.get("location", "").strip() or None
     min_salary = request.form.get("minSalary", "").strip()
-    use_ai_matching = request.form.get("useAI", "false").lower() == "true"
 
     if not role_query:
         return jsonify({"error": "Role title is required for strict title filtering."}), 400
@@ -43,37 +44,52 @@ def analyze_jobs():
         except Exception as exc:  # noqa: BLE001
             return jsonify({"error": f"Resume parsing failed: {exc}"}), 400
 
+    if not resume_text:
+        return jsonify({"error": "Resume could not be parsed or is empty."}), 400
+
+    # Step 1: Strict job title matching (hardline requirement)
     jobs = search_jobs_strict_title(role_query, location, salary_filter)
     if not jobs:
-        return jsonify({"jobs": [], "skill_gap_summary": [], "message": "No title-matching jobs found."})
-
-    resume_skills = extract_canonical_skills(resume_text)
-    weak_resume_signals = detect_weak_signals(resume_text)
-
-    analyses = []
-    for job in jobs:
-        # Use AI matching if requested, otherwise use keyword matching
-        if use_ai_matching:
-            fit = score_fit_with_ai(resume_text, job.get("description", ""), use_ai=True)
-        else:
-            jd_skills = extract_canonical_skills(job.get("description", ""))
-            fit = score_fit(resume_skills, jd_skills)
-        
-        analyses.append(
+        return jsonify(
             {
-                "job": job,
-                "fit_score": fit["score"],
-                "matched_strengths": fit["matched_strengths"],
-                "missing_skills": fit["missing_skills"],
-                "jd_skills": sorted(resume_skills.keys()),
-                "resume_skills": sorted(resume_skills.keys()),
-                "weak_resume_signals": weak_resume_signals,
-                "ignored_jd_terms": ignored_term_hits(job.get("description", "")),
-                "sponsorship_classification": classify_sponsorship(job.get("description", "")),
-                "explanation": fit["explanation"],
-                "ai_powered": fit.get("ai_powered", False),
+                "jobs": [],
+                "skill_gap_summary": [],
+                "message": f"No jobs found matching title '{role_query}'.",
             }
         )
 
+    # Step 2: AI-powered skill matching for all jobs
+    analyses = []
+    for job in jobs:
+        try:
+            # Use Gemini AI for intelligent skill matching
+            fit = score_fit_with_ai(resume_text, job.get("description", ""), use_ai=True)
+
+            analyses.append(
+                {
+                    "job": job,
+                    "fit_score": fit["score"],
+                    "matched_strengths": fit["matched_strengths"],
+                    "missing_skills": fit["missing_skills"],
+                    "explanation": fit["explanation"],
+                    "ai_powered": True,
+                }
+            )
+        except Exception as e:
+            # Log error but continue with other jobs
+            print(f"Error analyzing job {job.get('id')}: {e}")
+            analyses.append(
+                {
+                    "job": job,
+                    "fit_score": 0,
+                    "matched_strengths": [],
+                    "missing_skills": [],
+                    "explanation": f"Analysis failed: {str(e)}",
+                    "ai_powered": False,
+                }
+            )
+
+    # Sort by fit score (highest first)
     analyses.sort(key=lambda a: a["fit_score"], reverse=True)
+
     return jsonify({"jobs": analyses, "skill_gap_summary": aggregate_skill_gaps(analyses)})

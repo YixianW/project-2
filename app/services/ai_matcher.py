@@ -28,7 +28,7 @@ class GeminiMatcher:
         self.model = genai.GenerativeModel("gemini-pro")
 
     def get_skill_taxonomy_str(self) -> str:
-        """Get formatted skill taxonomy for context."""
+        """Get formatted skill taxonomy for context (kept for backward compatibility)."""
         taxonomy_lines = []
         for cluster_block in SKILL_TAXONOMY:
             cluster = cluster_block["cluster"]
@@ -60,32 +60,40 @@ class GeminiMatcher:
                 explanation="Empty resume or job description",
             )
 
-        taxonomy_str = self.get_skill_taxonomy_str()
+        prompt = f"""You are an expert recruiter and skill matcher. Your job is to evaluate how well a candidate's resume matches a job description.
 
-        prompt = f"""You are a skill matching expert. Analyze the resume and job description to identify matching skills.
+IMPORTANT: Focus on SEMANTIC matching, not just exact keyword matches. 
+- Understand that different terms mean the same thing (e.g., "go-to-market strategy", "product launch", "market entry")
+- Recognize related skills even if worded differently
+- Consider context and implied skills from job titles and descriptions
+- Be generous with matching for relevant skills and experience
 
-Use this canonical skill taxonomy as reference:
-{taxonomy_str}
-
-RESUME TEXT:
-{resume_text[:2000]}
+RESUME:
+{resume_text[:3000]}
 
 JOB DESCRIPTION:
-{job_description[:2000]}
+{job_description[:3000]}
 
 Task:
-1. Extract technical skills mentioned in the RESUME that match our skill taxonomy
-2. Extract technical skills REQUIRED by the JOB DESCRIPTION
-3. Identify which resume skills match job requirements
-4. Identify which job skills are MISSING from the resume
-5. Provide a confidence score (0-100) for how well the candidate fits
+1. Extract the KEY SKILLS and EXPERIENCE from the RESUME (both technical and soft skills, responsibility areas)
+2. Extract the KEY SKILLS REQUIRED by the JOB DESCRIPTION
+3. Match resume skills to job requirements using SEMANTIC understanding
+   - Exact matches count
+   - Closely related skills count (e.g., "marketing" matches job asking for "campaign management")
+   - Similar experience areas count (e.g., "product launches" matches "go-to-market strategy")
+4. Identify job skills that are MISSING from resume
+5. Provide confidence score (0-100) - be realistic:
+   - 80-100: Strong match, candidate well-prepared
+   - 60-79: Good match, candidate can learn on the job
+   - 40-59: Partial match, candidate would need some growth
+   - 0-39: Weak match, significant gaps
 
-Return ONLY a valid JSON object (no markdown, no code blocks) with this exact structure:
+Return ONLY a valid JSON object (no markdown, no code blocks):
 {{
     "matched_skills": ["skill1", "skill2"],
     "missing_skills": ["skill3", "skill4"],
     "confidence_score": 75,
-    "explanation": "Brief explanation of the match"
+    "explanation": "Brief explanation of the match (1-2 sentences)"
 }}"""
 
         try:
