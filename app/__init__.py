@@ -36,7 +36,7 @@ def create_app() -> Flask:
     return app
 
 
-# create a module‐level application object for WSGI servers that
+# Create a module-level application object for WSGI servers that
 # expect to import ``app`` from the package (e.g. using ``gunicorn
 # app:app``).  This keeps the factory pattern available while
 # providing a convenient default for deployments.
