@@ -11,4 +11,4 @@
  * 取消注释下面的行并修改为你的 Render 应用 URL
  */
 
-// window.API_BASE_URL = 'https://your-app.onrender.com';
+window.API_BASE_URL = 'https://project-2-fqvk.onrender.com';
