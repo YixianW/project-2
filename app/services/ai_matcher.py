@@ -1,6 +1,8 @@
 import json
 import os
+import tempfile
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import google.generativeai as genai
 
@@ -26,6 +28,140 @@ class GeminiMatcher:
             raise ValueError("GEMINI_API_KEY environment variable not set")
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel("gemini-pro")
+        self.vision_model = genai.GenerativeModel("gemini-1.5-pro")  # For file analysis
+
+    def _save_temp_file(self, filename: str, file_bytes: bytes) -> str:
+        """Save uploaded file to temp location for Gemini to read."""
+        temp_dir = tempfile.gettempdir()
+        temp_path = Path(temp_dir) / filename
+        temp_path.write_bytes(file_bytes)
+        return str(temp_path)
+
+    def match_skills_with_file(
+        self,
+        resume_filename: str,
+        resume_bytes: bytes,
+        job_description: str,
+    ) -> AIMatchResult:
+        """
+        Use Gemini AI to match skills by reading the actual resume file.
+        
+        Args:
+            resume_filename: Original filename (e.g., "resume.pdf")
+            resume_bytes: File contents as bytes
+            job_description: Job description text (or JD file path)
+        
+        Returns:
+            AIMatchResult with matched skills, missing skills, and confidence score
+        """
+        if not resume_bytes or not job_description:
+            return AIMatchResult(
+                matched_skills=[],
+                missing_skills=[],
+                confidence_score=0,
+                explanation="Empty resume or job description",
+            )
+
+        try:
+            # Save temp file for Gemini to process
+            temp_path = self._save_temp_file(resume_filename, resume_bytes)
+
+            # Upload file to Gemini
+            print(f"Uploading resume file: {resume_filename}")
+            uploaded_file = genai.upload_file(temp_path)
+
+            # Create prompt with file reference
+            prompt = f"""You are an expert recruiter and skill matcher. Your job is to evaluate how well a candidate's resume matches a job description.
+
+I'm uploading the candidate's resume file directly. Please read and understand the entire resume, including:
+- Work experience and achievements
+- Skills and technical abilities
+- Education and certifications
+- Any projects or volunteer work
+- Soft skills and competencies
+
+Then match it against the job requirements below.
+
+IMPORTANT: Focus on SEMANTIC matching, not just exact keyword matches. 
+- Understand that different terms mean the same thing (e.g., "go-to-market strategy", "product launch", "market entry")
+- Recognize related skills even if worded differently
+- Consider context and implied skills from job titles and descriptions
+- Be generous with matching for relevant skills and experience
+- Look at the spirit of what the candidate can do, not just literal matches
+
+JOB DESCRIPTION:
+{job_description[:3000]}
+
+Task:
+1. Extract the KEY SKILLS and EXPERIENCE from the RESUME FILE (both technical and soft skills, responsibility areas)
+2. Extract the KEY SKILLS REQUIRED by the JOB DESCRIPTION
+3. Match resume skills to job requirements using SEMANTIC understanding
+   - Exact matches count
+   - Closely related skills count (e.g., "marketing" matches job asking for "campaign management")
+   - Similar experience areas count (e.g., "product launches" matches "go-to-market strategy")
+4. Identify job skills that are MISSING from resume
+5. Provide confidence score (0-100) - be realistic:
+   - 80-100: Strong match, candidate well-prepared
+   - 60-79: Good match, candidate can learn on the job
+   - 40-59: Partial match, candidate would need some growth
+   - 0-39: Weak match, significant gaps
+
+Return ONLY a valid JSON object (no markdown, no code blocks):
+{{
+    "matched_skills": ["skill1", "skill2"],
+    "missing_skills": ["skill3", "skill4"],
+    "confidence_score": 75,
+    "explanation": "Brief explanation of the match (1-2 sentences)"
+}}"""
+
+            # Call Gemini with file reference
+            response = self.vision_model.generate_content(
+                [prompt, uploaded_file]
+            )
+            response_text = response.text.strip()
+
+            # Clean up: delete uploaded file
+            genai.delete_file(uploaded_file.name)
+
+            # Remove markdown code blocks if present
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+            response_text = response_text.strip()
+
+            result_dict = json.loads(response_text)
+
+            return AIMatchResult(
+                matched_skills=result_dict.get("matched_skills", []),
+                missing_skills=result_dict.get("missing_skills", []),
+                confidence_score=int(result_dict.get("confidence_score", 0)),
+                explanation=result_dict.get("explanation", ""),
+                raw_response=response_text,
+            )
+
+        except json.JSONDecodeError as e:
+            return AIMatchResult(
+                matched_skills=[],
+                missing_skills=[],
+                confidence_score=0,
+                explanation=f"Failed to parse AI response: {str(e)}",
+                raw_response=response_text if 'response_text' in locals() else "",
+            )
+        except Exception as e:
+            return AIMatchResult(
+                matched_skills=[],
+                missing_skills=[],
+                confidence_score=0,
+                explanation=f"AI matching failed: {str(e)}",
+            )
+        finally:
+            # Clean up temp file
+            try:
+                if 'temp_path' in locals():
+                    Path(temp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def get_skill_taxonomy_str(self) -> str:
         """Get formatted skill taxonomy for context (kept for backward compatibility)."""

@@ -1,12 +1,8 @@
 from flask import Blueprint, jsonify, render_template, request
 
+from app.services.ai_matcher import get_ai_matcher
 from app.services.job_service import search_jobs_strict_title
-from app.services.resume_parser import extract_resume_text
-from app.services.skill_engine import (
-    aggregate_skill_gaps,
-    score_fit_with_ai,
-)
-from app.services.sponsorship import classify_sponsorship
+from app.services.skill_engine import aggregate_skill_gaps
 
 api = Blueprint("api", __name__)
 
@@ -19,10 +15,13 @@ def index():
 @api.post("/api/analyze")
 def analyze_jobs():
     """
-    Analyze job fit using AI-powered matching.
+    Analyze job fit using AI-powered matching with direct file analysis.
     
-    Skill matching is now powered by Gemini AI for semantic understanding.
-    Job title search remains strict (hardline requirement).
+    Workflow:
+    1. Strict job title search (filter by title, location, salary)
+    2. Gemini AI reads the actual resume file (PDF/DOCX)
+    3. Gemini AI reads each job description
+    4. Gemini AI performs semantic skill matching
     """
     role_query = request.form.get("role", "").strip()
     location = request.form.get("location", "").strip() or None
@@ -37,15 +36,15 @@ def analyze_jobs():
         return jsonify({"error": "Minimum salary must be a valid integer."}), 400
 
     resume_file = request.files.get("resume")
-    resume_text = ""
-    if resume_file and resume_file.filename:
-        try:
-            resume_text = extract_resume_text(resume_file.filename, resume_file.read())
-        except Exception as exc:  # noqa: BLE001
-            return jsonify({"error": f"Resume parsing failed: {exc}"}), 400
+    if not resume_file or not resume_file.filename:
+        return jsonify({"error": "Resume file is required"}), 400
 
-    if not resume_text:
-        return jsonify({"error": "Resume could not be parsed or is empty."}), 400
+    # Read resume file bytes
+    resume_filename = resume_file.filename
+    resume_bytes = resume_file.read()
+    
+    if not resume_bytes:
+        return jsonify({"error": "Resume file is empty"}), 400
 
     # Step 1: Strict job title matching (hardline requirement)
     jobs = search_jobs_strict_title(role_query, location, salary_filter)
@@ -58,20 +57,26 @@ def analyze_jobs():
             }
         )
 
-    # Step 2: AI-powered skill matching for all jobs
+    # Step 2: AI-powered skill matching using direct file analysis
+    matcher = get_ai_matcher()
     analyses = []
+    
     for job in jobs:
         try:
-            # Use Gemini AI for intelligent skill matching
-            fit = score_fit_with_ai(resume_text, job.get("description", ""), use_ai=True)
+            # Gemini AI reads the actual resume file and matches against JD
+            fit = matcher.match_skills_with_file(
+                resume_filename=resume_filename,
+                resume_bytes=resume_bytes,
+                job_description=job.get("description", ""),
+            )
 
             analyses.append(
                 {
                     "job": job,
-                    "fit_score": fit["score"],
-                    "matched_strengths": fit["matched_strengths"],
-                    "missing_skills": fit["missing_skills"],
-                    "explanation": fit["explanation"],
+                    "fit_score": fit.confidence_score,
+                    "matched_strengths": fit.matched_skills[:8],
+                    "missing_skills": fit.missing_skills[:10],
+                    "explanation": fit.explanation,
                     "ai_powered": True,
                 }
             )
