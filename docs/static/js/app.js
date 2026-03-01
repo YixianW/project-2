@@ -23,13 +23,30 @@ function saveJob(job) {
   renderSavedJobs();
 }
 
+function removeJob(jobId) {
+  const saved = getSavedJobs();
+  const filtered = saved.filter((j) => j.id !== jobId);
+  localStorage.setItem('savedJobs', JSON.stringify(filtered));
+  renderSavedJobs();
+}
+
 function renderSavedJobs() {
   const saved = getSavedJobs();
   if (!saved.length) {
     savedJobsEl.innerHTML = '<p>No saved jobs yet.</p>';
     return;
   }
-  savedJobsEl.innerHTML = saved.map((job) => `<div class="job"><strong>${job.title}</strong> — ${job.company}<br/><span class="meta">${job.location}</span></div>`).join('');
+  savedJobsEl.innerHTML = saved.map((job) => `
+    <article class="job">
+      <h3><a href="${job.redirect_url || '#'}" target="_blank" rel="noreferrer">${job.title}</a></h3>
+      <div class="meta">${job.company} · ${job.location}</div>
+      <button class="remove-job" data-job-id="${job.id}">Remove</button>
+    </article>
+  `).join('');
+
+  savedJobsEl.querySelectorAll('.remove-job').forEach((btn) => {
+    btn.addEventListener('click', () => removeJob(btn.dataset.jobId));
+  });
 }
 
 function renderGapChart(gaps) {
