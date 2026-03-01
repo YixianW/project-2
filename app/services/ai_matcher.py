@@ -63,7 +63,7 @@ class GeminiMatcher:
         Returns:
             AIMatchResult with matched skills, missing skills, and confidence score
         """
-        logger.info(f"Starting AI matching for {resume_filename}")
+        logger.info(f"Starting AI matching for {resume_filename} (size: {len(resume_bytes)} bytes)")
         
         if not resume_bytes or not job_description:
             logger.warning("Empty resume or job description provided")
@@ -74,15 +74,29 @@ class GeminiMatcher:
                 explanation="Empty resume or job description",
             )
 
+        temp_path = None
+        uploaded_file = None
+        
         try:
             # Save temp file for Gemini to process
             temp_path = self._save_temp_file(resume_filename, resume_bytes)
             logger.info(f"Saved temp resume file to: {temp_path}")
+            
+            # Clear resume_bytes from memory since we saved it
+            resume_bytes_copy = None
 
             # Upload file to Gemini
             logger.info(f"Uploading resume file to Gemini: {resume_filename}")
             uploaded_file = genai.upload_file(temp_path)
             logger.info(f"✓ File uploaded successfully. File ID: {uploaded_file.name}")
+            
+            # Delete temp file immediately to free memory
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+                temp_path = None
+                logger.info("✓ Temp file deleted from disk to free memory")
+            except Exception as e:
+                logger.warning(f"Failed to delete temp file: {e}")
 
             # Create prompt with file reference
             prompt = f"""You are an expert recruiter and skill matcher. Your job is to evaluate how well a candidate's resume matches a job description.
@@ -127,9 +141,10 @@ CRITICAL RULES:
    - 0-39: Weak match, significant gaps"""
 
             # Call Gemini with file reference
-            logger.info("Calling Gemini API for skill matching...")
+            logger.info("Calling Gemini API for skill matching (this may take 30-60 seconds for large files)...")
             response = self.vision_model.generate_content(
-                [prompt, uploaded_file]
+                [prompt, uploaded_file],
+                request_options={"timeout": 300}  # 5 minute timeout for Gemini
             )
             logger.info("✓ Gemini API response received")
             
@@ -137,8 +152,10 @@ CRITICAL RULES:
             logger.info(f"Raw response (first 300 chars): {response_text[:300]}")
 
             # Clean up: delete uploaded file
-            genai.delete_file(uploaded_file.name)
-            logger.info("✓ File deleted from Gemini")
+            if uploaded_file:
+                genai.delete_file(uploaded_file.name)
+                uploaded_file = None
+                logger.info("✓ File deleted from Gemini")
 
             # Extract JSON from response - handle markdown code blocks and other wrappers
             cleaned_text = response_text
@@ -213,11 +230,18 @@ CRITICAL RULES:
                 explanation=f"AI matching failed: {str(e)}",
             )
         finally:
-            # Clean up temp file
+            # Clean up temp file and uploaded file
             try:
-                if 'temp_path' in locals():
+                if temp_path:
                     Path(temp_path).unlink(missing_ok=True)
                     logger.info("Temp file cleaned up")
+            except Exception:
+                pass
+            
+            try:
+                if uploaded_file:
+                    genai.delete_file(uploaded_file.name)
+                    logger.info("Uploaded file cleaned up")
             except Exception:
                 pass
 
