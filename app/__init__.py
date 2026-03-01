@@ -21,21 +21,11 @@ def create_app() -> Flask:
                 static_folder=os.path.join(base_dir, "static"), 
                 template_folder=os.path.join(base_dir, "templates"))
     
-    # Increase max content length for large PDF files (up to 50MB)
-    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
-    
-    # Set request timeout for API calls that process large files
-    # The Gemini API can take 30-60 seconds for large PDFs
+    app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
     app.config["PROPAGATE_EXCEPTIONS"] = True
     
     # 启用 CORS，支持前后端分离部署
     CORS(app, resources={r"/api/*": {"origins": "*"}})
-    
-    # 检查 GEMINI_API_KEY
-    if os.getenv("GEMINI_API_KEY"):
-        logger.info("✓ GEMINI_API_KEY is configured")
-    else:
-        logger.warning("⚠ GEMINI_API_KEY is NOT configured - AI matching will fail")
     
     app.register_blueprint(api)
     logger.info("✓ Flask application initialized successfully")
